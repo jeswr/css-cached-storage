@@ -98,16 +98,13 @@ export class CachingDataAccessor
     if (op?.type === "write") {
       return guardedStreamFrom(op.data);
     }
-    if (!op) {
-      const cached = this.readCache.get(path);
-      if (cached?.data) {
-        return guardedStreamFrom(cached.data);
-      }
+    const cached = this.readCache.get(path);
+    if (cached?.data) {
+      return guardedStreamFrom(cached.data);
     }
-    // No data-bearing overlay entry: read the source. Only populate the cache
-    // when the path is fully clean (a pending metadata op leaves data on the
-    // source but must not seed the cache, to keep the one-structure invariant).
-    return this.readFromSource(identifier, !op);
+    // Clean path (no pending write/delete): read the source, caching as it
+    // streams through.
+    return this.readFromSource(identifier);
   }
 
   public async getMetadata(
@@ -118,14 +115,12 @@ export class CachingDataAccessor
     if (op?.type === "delete") {
       throw new NotFoundHttpError();
     }
-    if (op?.type === "write" || op?.type === "metadata") {
+    if (op?.type === "write") {
       return new RepresentationMetadata(op.metadata);
     }
-    if (!op) {
-      const cached = this.readCache.get(path);
-      if (cached?.metadata) {
-        return new RepresentationMetadata(cached.metadata);
-      }
+    const cached = this.readCache.get(path);
+    if (cached?.metadata) {
+      return new RepresentationMetadata(cached.metadata);
     }
     const metadata = await this.source.getMetadata(identifier);
     // Re-check: only cache if still clean (a write may have raced in).
@@ -206,14 +201,17 @@ export class CachingDataAccessor
   ): Promise<void> {
     const { path } = identifier;
     const op = this.writeQueue.peek(path);
-    if (op?.type === "delete") {
-      // Metadata on a tombstoned resource: let the source decide (likely 404).
-      await this.writeQueue.writeMetadataThrough(identifier, metadata);
+    this.readCache.delete(path);
+    if (op?.type === "write") {
+      // Merge into the pending write so it flushes with the new metadata; the
+      // resource is known to exist (it is queued for creation).
+      this.writeQueue.mergeMetadata(path, new RepresentationMetadata(metadata));
       return;
     }
-    this.readCache.delete(path);
-    this.writeQueue.enqueueMetadata(path, new RepresentationMetadata(metadata));
-    this.writeQueue.kick();
+    // No pending write: write straight through. A missing resource then fails
+    // immediately (rather than at a later flush), and getMetadata never reports
+    // metadata for a resource that the source does not have.
+    await this.writeQueue.writeMetadataThrough(identifier, metadata);
   }
 
   public async deleteResource(identifier: ResourceIdentifier): Promise<void> {
@@ -223,9 +221,9 @@ export class CachingDataAccessor
     if (op?.type === "delete") {
       throw new NotFoundHttpError();
     }
-    if (op?.type === "write" || op?.type === "metadata") {
-      // Lives (or is updated) only in the overlay: tombstone so reads 404 now;
-      // the flusher removes any older source copy.
+    if (op?.type === "write") {
+      // Lives only in the overlay: tombstone so reads 404 now; the flusher
+      // removes any older source copy.
       this.writeQueue.enqueueDelete(path);
       this.writeQueue.kick();
       return;
@@ -243,18 +241,14 @@ export class CachingDataAccessor
   }
 
   /**
-   * Reads from the source, optionally caching the body (up to the per-file cap)
-   * as it streams through. Re-checks the overlay before caching so a write that
-   * raced in during the read never leaves a stale entry behind.
+   * Reads from the source, caching the body (up to the per-file cap) as it
+   * streams through. Re-checks the overlay before caching so a write that raced
+   * in during the read never leaves a stale entry behind.
    */
   private async readFromSource(
     identifier: ResourceIdentifier,
-    allowCache: boolean,
   ): Promise<Guarded<Readable>> {
     const stream = await this.source.getData(identifier);
-    if (!allowCache) {
-      return stream;
-    }
     const { path } = identifier;
     return tappedReadable(
       stream,

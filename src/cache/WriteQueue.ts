@@ -15,16 +15,11 @@ interface WriteOp {
   metadata: RepresentationMetadata;
   size: number;
 }
-/** A metadata-only update to an existing resource. */
-interface MetadataOp {
-  type: "metadata";
-  metadata: RepresentationMetadata;
-}
 /** A tombstone: the resource is to be removed from the source. */
 interface DeleteOp {
   type: "delete";
 }
-export type PendingOp = WriteOp | MetadataOp | DeleteOp;
+export type PendingOp = WriteOp | DeleteOp;
 
 /**
  * The authoritative in-memory overlay of pending mutations, plus the background
@@ -93,14 +88,16 @@ export class WriteQueue {
     return true;
   }
 
-  /** Buffers a metadata update, merging onto a pending write when one exists. */
-  public enqueueMetadata(path: string, metadata: RepresentationMetadata): void {
+  /**
+   * Merges a metadata update onto an existing pending write so it flushes with
+   * the new metadata. No-op when there is no pending write for the path (the
+   * caller writes such updates straight through instead).
+   */
+  public mergeMetadata(path: string, metadata: RepresentationMetadata): void {
     const previous = this.pending.get(path);
     if (previous?.type === "write") {
       previous.metadata = metadata;
-      return;
     }
-    this.pending.set(path, { type: "metadata", metadata });
   }
 
   /** Buffers a delete (tombstone), coalescing over any earlier pending op. */
@@ -280,13 +277,6 @@ export class WriteQueue {
           throw error;
         }
       }
-      return;
-    }
-    if (op.type === "metadata") {
-      await this.source.writeMetadata(
-        identifier,
-        new RepresentationMetadata(op.metadata),
-      );
       return;
     }
     await this.source.writeDocument(

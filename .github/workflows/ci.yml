@@ -1,0 +1,30 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      # Existence + age gate on the *real* manifest (the deterministic gates.yml
+      # only scans the fixture manifest for its self-test).
+      - name: Dependency existence + age (real manifest)
+        run: node guardrails/scripts/check-packages.mjs --ecosystem npm --scan package.json
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx @biomejs/biome check src test
+
+      - name: Test
+        run: npm test
+
+      - name: Build (tsc + Components.js metadata)
+        run: npm run build

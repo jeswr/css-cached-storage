@@ -208,17 +208,56 @@ describe("CachingDataAccessor", (): void => {
       );
     });
 
-    it("reflects a queued metadata update on the next getMetadata", async (): Promise<void> => {
+    it("merges a metadata update into an un-flushed write", async (): Promise<void> => {
+      const g = gate();
+      const original = h.source.writeDocument.bind(h.source);
+      jest
+        .spyOn(h.source, "writeDocument")
+        .mockImplementation(async (...args): Promise<void> => {
+          await g.wait;
+          return original(...args);
+        });
+
+      await h.cache.writeDocument(id("a"), data("body"), meta(id("a")));
+      await h.cache.writeMetadata(id("a"), meta(id("a"), "application/json"));
+
+      // The overlay reflects the merged metadata, and the data is still readable.
+      expect((await h.cache.getMetadata(id("a"))).contentType).toBe(
+        "application/json",
+      );
+      expect(await readStr(await h.cache.getData(id("a")))).toBe("body");
+
+      g.open();
+      await h.cache.finalize();
+      expect((await h.cache.getMetadata(id("a"))).contentType).toBe(
+        "application/json",
+      );
+    });
+
+    it("writes metadata through (no pending write) and reads it back fresh", async (): Promise<void> => {
       await h.cache.writeDocument(id("a"), data("body"), meta(id("a")));
       await h.cache.finalize();
 
-      const updated = meta(id("a"), "application/json");
-      await h.cache.writeMetadata(id("a"), updated);
+      await h.cache.writeMetadata(id("a"), meta(id("a"), "application/json"));
 
-      const md = await h.cache.getMetadata(id("a"));
-      expect(md.contentType).toBe("application/json");
-      // Data is unchanged and still reachable.
+      expect((await h.cache.getMetadata(id("a"))).contentType).toBe(
+        "application/json",
+      );
       expect(await readStr(await h.cache.getData(id("a")))).toBe("body");
+    });
+
+    it("fails writeMetadata on a missing resource instead of deferring the 404", async (): Promise<void> => {
+      // Regression: a metadata write to a nonexistent path must not succeed and
+      // then surface phantom metadata from the overlay.
+      await expect(
+        h.cache.writeMetadata(
+          id("ghost"),
+          meta(id("ghost"), "application/json"),
+        ),
+      ).rejects.toThrow(NotFoundHttpError);
+      await expect(h.cache.getMetadata(id("ghost"))).rejects.toThrow(
+        NotFoundHttpError,
+      );
     });
 
     it("getChildren reflects queued creates and deletes", async (): Promise<void> => {
