@@ -1,0 +1,8 @@
+title = "repo gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "test fixtures contain intentionally-fake secrets for the self-test"
+paths = ['''tests/fixtures/bad/.*''']

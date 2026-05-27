@@ -1,0 +1,25 @@
+{
+  "$comment": "Single source of truth for dependency policy. mode 'denylist' blocks listed packages; switch to 'allowlist' to block everything not explicitly approved. minAgeDays guards against freshly-registered slopsquatting names (applies to a package's FIRST publication). Edit per-org; per-project AGENTS.md may point at a stricter policy.",
+  "mode": "denylist",
+  "minAgeDays": 30,
+  "npm": {
+    "deny": ["request", "moment", "left-pad", "colors", "node-fetch"],
+    "denyReasons": {
+      "request": "deprecated since 2020 — use native fetch / undici",
+      "moment": "maintenance mode — use Temporal / date-fns / Luxon",
+      "left-pad": "trivial; use String.prototype.padStart",
+      "colors": "compromised history (2022) — use picocolors / chalk",
+      "node-fetch": "redundant on Node 18+ — use global fetch"
+    },
+    "allow": ["react", "react-dom", "next", "zod", "vitest", "@biomejs/biome",
+              "dependency-cruiser", "undici", "picocolors", "date-fns",
+              "@rdfjs/types", "n3", "@comunica/query-sparql"]
+  },
+  "pypi": {
+    "deny": ["sklearn", "python-dateutil-old"],
+    "denyReasons": {
+      "sklearn": "dummy/typosquat shim — the real package is scikit-learn"
+    },
+    "allow": ["ruff", "pytest", "hypothesis", "rdflib", "pyshacl", "pandas", "httpx"]
+  }
+}

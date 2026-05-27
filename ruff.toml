@@ -1,0 +1,8 @@
+# Deterministic Python gate. These rule families enforce what does NOT belong in a prose
+# guardrail file: N=naming, B=common-bug patterns (bugbear), S=security (bandit),
+# F=pyflakes, E=pycodestyle, UP=pyupgrade, I=import sorting.
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = ["E", "F", "N", "B", "S", "UP", "I"]

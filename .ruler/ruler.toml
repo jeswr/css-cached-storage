@@ -1,0 +1,20 @@
+# Ruler config — compile .ruler/*.md into each tool's native rules file.
+# Run: npx @intellectronica/ruler apply
+# Docs: https://github.com/intellectronica/ruler
+
+# Don't let Ruler manage .gitignore for generated files (we choose what to commit).
+[gitignore]
+enabled = false
+
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = true
+[agents.cursor]
+enabled = true
+[agents.copilot]
+enabled = true
+[agents.gemini-cli]
+enabled = true
+[agents.aider]
+enabled = true

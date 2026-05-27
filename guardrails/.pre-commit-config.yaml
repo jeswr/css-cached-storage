@@ -1,0 +1,39 @@
+# Deterministic local gate stack. Run: pre-commit install --config guardrails/.pre-commit-config.yaml
+# Bad fixtures (tests/fixtures/bad) are excluded here — they intentionally fail, and are
+# exercised by tests/selftest.sh instead, so the repo itself stays committable.
+exclude: '^tests/fixtures/bad/'
+
+repos:
+  # --- secrets ---
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  # --- python: naming (N), common errors (B), security (S), style, imports ---
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.14
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # --- typescript/js: lint + naming convention (Biome) ---
+  - repo: local
+    hooks:
+      - id: biome-check
+        name: biome check (TS/JS naming + lint)
+        entry: npx --yes @biomejs/biome check --no-errors-on-unmatched
+        language: system
+        types_or: [ts, tsx, javascript, jsx]
+        pass_filenames: true
+
+  # --- dependencies: banned/unapproved packages (offline, fast) ---
+  - repo: local
+    hooks:
+      - id: package-policy
+        name: package policy (deny/allowlist, offline)
+        entry: bash guardrails/scripts/precommit-package-scan.sh
+        language: system
+        files: '(^|/)package\.json$'
+        pass_filenames: true
