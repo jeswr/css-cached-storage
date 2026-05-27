@@ -1,4 +1,8 @@
-import { NotFoundHttpError, POSIX } from "@solid/community-server";
+import {
+  NotFoundHttpError,
+  POSIX,
+  RepresentationMetadata,
+} from "@solid/community-server";
 import {
   data,
   gate,
@@ -90,10 +94,31 @@ describe("CachingDataAccessor", (): void => {
       expect(await readStr(await h.source.getData(id("a")))).toBe("queued");
     });
 
-    it("records the binary size on queued writes", async (): Promise<void> => {
+    it("records the binary size once the write is flushed to the source", async (): Promise<void> => {
       await h.cache.writeDocument(id("a"), data("12345"), meta(id("a")));
+      await h.cache.finalize();
       const md = await h.cache.getMetadata(id("a"));
       expect(md.get(POSIX.terms.size)?.value).toBe("5");
+    });
+
+    it("never injects posix:size into the wrapped accessor (no duplicate triples)", async (): Promise<void> => {
+      // Regression: the decorator must leave posix:size to the leaf accessor.
+      // Setting it here previously produced two posix:size triples on disk,
+      // corrupting metadata (e.g. the WebID profile → auth failures). Snapshot
+      // the metadata at call-entry, before the leaf mutates it in place.
+      let passed: RepresentationMetadata | undefined;
+      const original = h.source.writeDocument.bind(h.source);
+      jest
+        .spyOn(h.source, "writeDocument")
+        .mockImplementation(
+          async (identifier, body, metadata): Promise<void> => {
+            passed = new RepresentationMetadata(metadata);
+            return original(identifier, body, metadata);
+          },
+        );
+      await h.cache.writeDocument(id("a"), data("12345"), meta(id("a")));
+      await h.cache.finalize();
+      expect(passed?.getAll(POSIX.terms.size) ?? []).toHaveLength(0);
     });
 
     it("flushes pending writes on finalize", async (): Promise<void> => {

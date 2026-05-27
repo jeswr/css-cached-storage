@@ -4,9 +4,7 @@ import {
   type Finalizable,
   type Guarded,
   guardedStreamFrom,
-  isInternalContentType,
   NotFoundHttpError,
-  POSIX,
   type Representation,
   RepresentationMetadata,
   type ResourceIdentifier,
@@ -172,8 +170,9 @@ export class CachingDataAccessor
       next = await iterator.next();
     }
 
-    // Fully buffered within the per-file cap.
-    this.setBinarySize(metadata, size);
+    // Fully buffered within the per-file cap. Do not touch posix:size here: the
+    // wrapped (leaf) accessor records it on write, and adding it in this
+    // decorator would store a duplicate, corrupting the resource's metadata.
     const queued = new RepresentationMetadata(metadata);
     if (this.writeQueue.enqueueWrite(path, chunks, queued, size)) {
       this.readCache.delete(path);
@@ -263,12 +262,5 @@ export class CachingDataAccessor
         }
       },
     );
-  }
-
-  /** Records the binary size on metadata, mirroring CSS's own accessors. */
-  private setBinarySize(metadata: RepresentationMetadata, size: number): void {
-    if (metadata.contentType && !isInternalContentType(metadata.contentType)) {
-      metadata.set(POSIX.terms.size, `${size}`);
-    }
   }
 }
