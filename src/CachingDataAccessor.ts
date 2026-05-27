@@ -4,7 +4,9 @@ import {
   type Finalizable,
   type Guarded,
   guardedStreamFrom,
+  isInternalContentType,
   NotFoundHttpError,
+  POSIX,
   type Representation,
   RepresentationMetadata,
   type ResourceIdentifier,
@@ -114,7 +116,18 @@ export class CachingDataAccessor
       throw new NotFoundHttpError();
     }
     if (op?.type === "write") {
-      return new RepresentationMetadata(op.metadata);
+      // Reflect the size the leaf accessor will persist on flush, so a queued
+      // write reads back the same posix:size before and after flushing. Only the
+      // cache-visible copy gets it — op.metadata stays clean so the flush never
+      // writes a duplicate posix:size triple.
+      const metadata = new RepresentationMetadata(op.metadata);
+      if (
+        metadata.contentType &&
+        !isInternalContentType(metadata.contentType)
+      ) {
+        metadata.set(POSIX.terms.size, `${op.size}`);
+      }
+      return metadata;
     }
     const cached = this.readCache.get(path);
     if (cached?.metadata) {

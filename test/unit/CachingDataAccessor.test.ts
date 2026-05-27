@@ -94,11 +94,28 @@ describe("CachingDataAccessor", (): void => {
       expect(await readStr(await h.source.getData(id("a")))).toBe("queued");
     });
 
-    it("records the binary size once the write is flushed to the source", async (): Promise<void> => {
+    it("reports the binary size for a queued write, before and after flush", async (): Promise<void> => {
+      const g = gate();
+      const original = h.source.writeDocument.bind(h.source);
+      jest
+        .spyOn(h.source, "writeDocument")
+        .mockImplementation(async (...args): Promise<void> => {
+          await g.wait;
+          return original(...args);
+        });
+
       await h.cache.writeDocument(id("a"), data("12345"), meta(id("a")));
+      // Visible from the overlay before the write is flushed.
+      expect(
+        (await h.cache.getMetadata(id("a"))).get(POSIX.terms.size)?.value,
+      ).toBe("5");
+
+      g.open();
       await h.cache.finalize();
-      const md = await h.cache.getMetadata(id("a"));
-      expect(md.get(POSIX.terms.size)?.value).toBe("5");
+      // And consistent after flush (now read from the source).
+      expect(
+        (await h.cache.getMetadata(id("a"))).get(POSIX.terms.size)?.value,
+      ).toBe("5");
     });
 
     it("never injects posix:size into the wrapped accessor (no duplicate triples)", async (): Promise<void> => {
