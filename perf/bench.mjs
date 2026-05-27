@@ -12,14 +12,15 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdir, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 const jose = await import("jose");
 
 // The CSS runtime (CSS + this component) lives outside the repo — see perf/setup.sh.
 const RUNTIME = process.env.CCS_PERF_RUNTIME ?? "/tmp/ccs-cache-perf-runtime";
-const REPO = resolve(import.meta.dirname, "..");
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const SCENARIOS = [
   {
@@ -151,8 +152,9 @@ async function bootServer(config, port) {
   await rm(dataDir, { recursive: true, force: true });
   await mkdir(dataDir, { recursive: true });
 
+  // Run the CSS that is installed in the runtime being measured, not the repo's.
   const bin = join(
-    REPO,
+    RUNTIME,
     "node_modules",
     "@solid",
     "community-server",
