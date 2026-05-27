@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { monitorEventLoopDelay } from "node:perf_hooks";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
@@ -290,7 +291,10 @@ async function benchmark(scenario) {
       },
     );
 
-    // Mixed read/write under load.
+    // Mixed read/write under load. Track event-loop delay to see how much the
+    // background flusher is stealing time from foreground request handling.
+    const loopDelay = monitorEventLoopDelay({ resolution: 10 });
+    loopDelay.enable();
     const mixedLoad = await runPool(LOAD_CONCURRENCY, LOAD_OPS, async (i) => {
       if (Math.random() < LOAD_READ_RATIO) {
         const res = await af(`${pod}warm-${i % READ_SET}`);
@@ -304,6 +308,7 @@ async function benchmark(scenario) {
         if (!res.ok) throw new Error(`load PUT ${res.status}`);
       }
     });
+    loopDelay.disable();
 
     return {
       label: scenario.label,
@@ -317,6 +322,8 @@ async function benchmark(scenario) {
       mixedLoad: {
         ...summarize(mixedLoad.samples),
         throughput: mixedLoad.throughput,
+        loopDelayP99: loopDelay.percentile(99) / 1e6,
+        loopDelayMax: loopDelay.max / 1e6,
       },
     };
   } finally {
@@ -356,7 +363,9 @@ async function main() {
     row("read seq p95", a.readSeq, b.readSeq, "p95"),
     row("auth load p95", a.authLoad, b.authLoad, "p95"),
     row("auth load throughput", a.authLoad, b.authLoad, "throughput", "ops/s"),
+    row("mixed load p50", a.mixedLoad, b.mixedLoad, "p50"),
     row("mixed load p95", a.mixedLoad, b.mixedLoad, "p95"),
+    row("mixed load p99", a.mixedLoad, b.mixedLoad, "p99"),
     row(
       "mixed load throughput",
       a.mixedLoad,
@@ -364,6 +373,8 @@ async function main() {
       "throughput",
       "ops/s",
     ),
+    row("mixed loop-delay p99", a.mixedLoad, b.mixedLoad, "loopDelayP99"),
+    row("mixed loop-delay max", a.mixedLoad, b.mixedLoad, "loopDelayMax"),
     "",
   ];
   process.stdout.write(`${lines.join("\n")}\n`);

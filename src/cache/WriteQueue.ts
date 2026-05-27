@@ -255,6 +255,14 @@ export class WriteQueue {
         if (this.pending.get(path) === op) {
           this.remove(path);
         }
+        // Cooperative flushing: yield the event loop between writes so this
+        // background drain fills idle gaps instead of competing with foreground
+        // request handling in a burst (which would raise their tail latency).
+        // The while-condition re-checks `pending` after the yield, so writes
+        // that arrive meanwhile are still picked up.
+        await new Promise<void>((resolve): void => {
+          setImmediate(resolve);
+        });
       }
     } finally {
       this.running = false;
