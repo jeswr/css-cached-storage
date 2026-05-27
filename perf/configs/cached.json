@@ -1,0 +1,30 @@
+{
+  "comment": "CachingDataAccessor in front of the file-system backend, swapped in via an Override of the backend store's accessor.",
+  "@context": [
+    "https://linkedsoftwaredependencies.org/bundles/npm/@solid/community-server/^7.0.0/components/context.jsonld",
+    "https://linkedsoftwaredependencies.org/bundles/npm/@jeswr/css-cached-storage/^0.0.0/components/context.jsonld"
+  ],
+  "import": ["css:config/file.json"],
+  "@graph": [
+    {
+      "@id": "urn:solid-server:default:CachedDataAccessor",
+      "@type": "CachingDataAccessor",
+      "source": { "@id": "urn:solid-server:default:FileDataAccessor" },
+      "maxReadCacheSize": 268435456,
+      "maxReadFileSize": 10485760,
+      "maxWriteQueueSize": 268435456,
+      "maxWriteQueueFileSize": 10485760,
+      "flushIntervalMs": 2000
+    },
+    {
+      "@type": "Override",
+      "overrideInstance": {
+        "@id": "urn:solid-server:default:ResourceStore_Backend"
+      },
+      "overrideParameters": {
+        "@type": "DataAccessorBasedStore",
+        "accessor": { "@id": "urn:solid-server:default:CachedDataAccessor" }
+      }
+    }
+  ]
+}
