@@ -60,8 +60,8 @@ bound the loss window.
 | Parameter               | Meaning                                                                   | Default  |
 | ----------------------- | ------------------------------------------------------------------------- | -------- |
 | `source`                | The wrapped `DataAccessor` (required).                                    | —        |
-| `maxReadCacheSize`      | Total bytes of resource data the read cache may retain (LRU eviction).    | 100 MiB  |
-| `maxReadFileSize`       | Largest single body admitted to the read cache; bigger reads stream through uncached. | 10 MiB |
+| `maxReadCacheSize`      | Total bytes of resource data the read cache may retain (LRU eviction).    | 1 GiB    |
+| `maxReadFileSize`       | Largest single body admitted to the read cache; bigger reads stream through uncached. | 1 MiB |
 | `maxWriteQueueSize`     | Total bytes of un-flushed writes before falling back to write-through.    | 100 MiB  |
 | `maxWriteQueueFileSize` | Largest single body buffered; bigger writes bypass straight to the source. | 10 MiB  |
 | `flushIntervalMs`       | Periodic safety-net flush interval (`0` disables; writes still flush eagerly). | `0` |

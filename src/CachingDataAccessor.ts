@@ -22,9 +22,9 @@ import { tappedReadable } from "./util/StreamUtil";
 export interface CachingDataAccessorArgs {
   /** The DataAccessor whose reads/writes are cached. */
   source: DataAccessor;
-  /** Total bytes of resource data the read cache may retain (LRU eviction). Default 100 MiB. */
+  /** Total bytes of resource data the read cache may retain (LRU eviction). Default 1 GiB. */
   maxReadCacheSize?: number;
-  /** Largest single body admitted to the read cache; bigger reads stream through uncached. Default 10 MiB. */
+  /** Largest single body admitted to the read cache; bigger reads stream through uncached. Default 1 MiB. */
   maxReadFileSize?: number;
   /** Total bytes of un-flushed writes the queue may hold before falling back to write-through. Default 100 MiB. */
   maxWriteQueueSize?: number;
@@ -35,6 +35,7 @@ export interface CachingDataAccessorArgs {
 }
 
 const MIB = 1024 * 1024;
+const GIB = 1024 * MIB;
 
 /**
  * A {@link DataAccessor} that fronts another accessor with an in-memory read
@@ -65,8 +66,8 @@ export class CachingDataAccessor
     this.source = args.source;
     this.maxWriteQueueFileSize = args.maxWriteQueueFileSize ?? 10 * MIB;
     this.readCache = new ReadCache(
-      args.maxReadCacheSize ?? 100 * MIB,
-      args.maxReadFileSize ?? 10 * MIB,
+      args.maxReadCacheSize ?? GIB,
+      args.maxReadFileSize ?? MIB,
     );
     this.writeQueue = new WriteQueue(
       args.source,
