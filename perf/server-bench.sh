@@ -45,9 +45,21 @@ PORT_C="${BENCH_PORT_C:-3022}"
 # NOT fall back to IPv4, so a `localhost` dial gets "Connection refused" against the IPv4 listener. CSS
 # binds all interfaces, but we dial 127.0.0.1 to be safe. (Same trap the Rust bench documents.)
 CONNECT_HOST="${BENCH_CONNECT_HOST:-127.0.0.1}"
-DURATION="${BENCH_DURATION:-10s}"            # oha -z per concurrency level
+DURATION="${BENCH_DURATION:-5s}"             # oha -z per concurrency level (short — a stable rate, not a long hammer)
 WARMUP_DURATION="${BENCH_WARMUP:-3s}"        # discarded warm-up before each measured sweep
-CONCURRENCY="${BENCH_CONCURRENCY:-1 8 32 64}"
+# CSS is single-threaded Node and SATURATES by ~c4 (at c=1 it was already only ~86 RPS), so a
+# Rust-scale c8/c16/c32/c64 sweep just measures CSS at saturation. Dialled BACK to a low-concurrency
+# sweep that lands on CSS's real operating range — the cache delta is what we're after, not the
+# saturation ceiling. (Override with BENCH_CONCURRENCY if a wider sweep is ever wanted.)
+CONCURRENCY="${BENCH_CONCURRENCY:-1 2 4}"
+# QUIET-BOX GUARD: max 1-minute load average tolerated before the run starts (and the bar we re-check
+# against between configs). The box has 8 cores; we require load well UNDER that (a genuinely quiet
+# box) so the loopback load-generator + CSS aren't fighting other work and A/B/C share conditions. If
+# the box never goes quiet within the timeout, the harness ABORTS rather than publish noisy numbers as
+# clean. Set BENCH_SKIP_LOAD_GUARD=1 to bypass (NOT advised — the whole point of the re-run).
+LOAD_GUARD_MAX="${BENCH_LOAD_GUARD_MAX:-2.0}"
+LOAD_GUARD_TIMEOUT_S="${BENCH_LOAD_GUARD_TIMEOUT_S:-3600}"   # how long to wait for the box to go quiet
+LOAD_GUARD_POLL_S="${BENCH_LOAD_GUARD_POLL_S:-30}"           # poll interval while waiting
 # COLD_SET = distinct resources seeded for the cold-read churn workload. MUST be a power of ten so the
 # churn regex (res-[0-9]{WIDTH}) spans EXACTLY the seeded range — otherwise the random churn URLs hit
 # unseeded paths and oha measures the 404 NOT-FOUND path (which oha counts as success!) instead of real
@@ -85,6 +97,43 @@ rm -rf "$RESULTS"
 mkdir -p "$RESULTS"
 RESULTS_TSV="$RESULTS/results.tsv"
 printf 'config\tworkload\tconcurrency\trps\tsuccess_rate\tp50_ms\tp99_ms\tp999_ms\n' > "$RESULTS_TSV"
+
+# --- quiet-box guard ----------------------------------------------------------------------------
+# Read the 1-minute load average (the first of the three `uptime` figures). Portable parse: take the
+# token after "load average:" / "load averages:" and strip a trailing comma. macOS prints
+# "load averages: 1.23 4.56 7.89"; Linux "load average: 1.23, 4.56, 7.89".
+one_min_load() {
+  uptime | sed -E 's/.*load averages?: *//; s/,.*//; s/ .*//'
+}
+
+# float "a < b" using awk (bash has no float compare).
+flt_lt() { awk -v a="$1" -v b="$2" 'BEGIN{exit !(a < b)}'; }
+
+# Block until the 1-min load average is < LOAD_GUARD_MAX, or give up after LOAD_GUARD_TIMEOUT_S.
+# Returns 0 once quiet; exits the script non-zero on timeout (we do NOT publish noisy numbers as clean).
+wait_for_quiet_box() {
+  local waited=0 load
+  load="$(one_min_load)"
+  if flt_lt "$load" "$LOAD_GUARD_MAX"; then
+    echo ">> QUIET-BOX GUARD: 1-min load $load < $LOAD_GUARD_MAX — box is quiet, starting run."
+    return 0
+  fi
+  echo ">> QUIET-BOX GUARD: 1-min load $load >= $LOAD_GUARD_MAX — WAITING for the box to go quiet"
+  echo ">>   (polling every ${LOAD_GUARD_POLL_S}s, up to ${LOAD_GUARD_TIMEOUT_S}s). $(uptime)"
+  while [ "$waited" -lt "$LOAD_GUARD_TIMEOUT_S" ]; do
+    sleep "$LOAD_GUARD_POLL_S"
+    waited=$((waited + LOAD_GUARD_POLL_S))
+    load="$(one_min_load)"
+    if flt_lt "$load" "$LOAD_GUARD_MAX"; then
+      echo ">> QUIET-BOX GUARD: 1-min load $load < $LOAD_GUARD_MAX after ${waited}s — box is quiet, starting run."
+      return 0
+    fi
+    echo ">>   …still busy after ${waited}s: 1-min load $load (need < $LOAD_GUARD_MAX). $(uptime)"
+  done
+  echo "ERROR: QUIET-BOX GUARD timed out after ${LOAD_GUARD_TIMEOUT_S}s — 1-min load never fell below $LOAD_GUARD_MAX (last $load)." >&2
+  echo "       NOT publishing load-contaminated numbers as clean. Re-run when the box is idle, or raise BENCH_LOAD_GUARD_TIMEOUT_S." >&2
+  exit 1
+}
 
 # --- helpers ------------------------------------------------------------------------------------
 # Parse one oha JSON result -> a TSV row (+ a one-line console summary). oha latencies are SECONDS.
@@ -165,7 +214,18 @@ bench_config() { # $1=config-label $2=config-file $3=port
   echo ""
   echo "==================================================================================="
   echo ">> CONFIG $config — $(basename "$cfgfile")  (port $port, base $base)"
+  echo ">> Box load AT THIS CONFIG's start: $(uptime)"
   echo "==================================================================================="
+  # Record the per-config load context so SERVER-BENCH.md can show A/B/C ran under the same conditions.
+  printf '%s\t%s\t%s\n' "$config" "$(one_min_load)" "$(uptime)" >> "$RESULTS/load-context.tsv"
+  # Re-assert the quiet-box bar before each config: if the box spiked between configs, the run is no
+  # longer comparable. Fail loud rather than silently publish a contaminated config.
+  local _l; _l="$(one_min_load)"
+  if ! flt_lt "$_l" "$LOAD_GUARD_MAX"; then
+    echo "ERROR: box load spiked to 1-min $_l (>= $LOAD_GUARD_MAX) before config $config — A/B/C would no longer be comparable." >&2
+    echo "       Aborting so we don't publish a load-contaminated config. Re-run on a quiet box." >&2
+    exit 1
+  fi
 
   # Boot CSS with this config against a throwaway data dir. -m RUNTIME so Components.js resolves the
   # css:… imports + this package's component from the out-of-repo runtime.
@@ -253,6 +313,15 @@ echo ">> Machine: $(sysctl -n machdep.cpu.brand_string 2>/dev/null || uname -m),
 echo ">> CSS version: $CSS_VERSION   |   oha: $OHA_VERSION   |   runtime: $RUNTIME"
 echo ">> Sweep: concurrency [$CONCURRENCY], duration $DURATION/level, warm-up $WARMUP_DURATION, body ${BODY_BYTES}B, cold-set ${COLD_SET}"
 echo ">> Load context BEFORE run: $(uptime)"
+
+# QUIET-BOX GUARD: the load-bearing fix. Block until the box is quiet so A/B/C run back-to-back inside
+# ONE calm window and share conditions. (Set BENCH_SKIP_LOAD_GUARD=1 only to bypass deliberately.)
+printf 'config\tone_min_load\tuptime\n' > "$RESULTS/load-context.tsv"
+if [ "${BENCH_SKIP_LOAD_GUARD:-0}" = 1 ]; then
+  echo ">> QUIET-BOX GUARD: BYPASSED (BENCH_SKIP_LOAD_GUARD=1) — numbers may be load-contaminated."
+else
+  wait_for_quiet_box
+fi
 
 bench_config "A-cached-file" "$HERE/server-configs/A-cached-file.json" "$PORT_A"
 bench_config "B-plain-file"  "$HERE/server-configs/B-plain-file.json"  "$PORT_B"
