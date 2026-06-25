@@ -4,6 +4,15 @@ Compares stock CSS file storage against the same backend fronted by
 `CachingDataAccessor`, on **authentication**, **resource reads**, and **resource
 writes**, both sequentially and under concurrent load.
 
+> **Two harnesses live here:**
+> - **`bench.mjs`** (this file) — a Node DataAccessor-level micro-bench through the **authenticated**
+>   (client-credentials + DPoP) CSS request path: file vs cached, latency/throughput per phase.
+> - **`server-bench.sh`** — a **server-level `oha` load benchmark** (RPS + p50/p99 concurrency sweep)
+>   over **THREE** server configs booted one at a time — **A** cached-file, **B** plain-file,
+>   **C** in-memory — with **auth stripped out** (`allow-all`, anonymous read+write) to isolate the
+>   storage delta. Mirrors the `solid-server-rs` `bench/` methodology. Results +
+>   write-up: [`SERVER-BENCH.md`](SERVER-BENCH.md). See its own section below.
+
 ## How to run
 
 ```bash
@@ -95,3 +104,52 @@ used in unit tests) surfaced a correctness bug: the decorator was setting
 duplicate triple that corrupted the WebID profile document and broke
 authentication. Fixed by leaving `posix:size` to the leaf accessor; covered by a
 regression test.
+
+---
+
+## Server-level load benchmark (`server-bench.sh`)
+
+A second, complementary harness that mirrors the **`solid-server-rs` `bench/`** methodology: an
+[`oha`](https://github.com/hatoo/oha) HTTP concurrency sweep reporting **sustained RPS + p50/p99
+latency**, against a **full CSS server** in three configurations booted one at a time:
+
+| config | storage backend | role |
+| --- | --- | --- |
+| **A — cached-file** | `CachingDataAccessor` → `FileDataAccessor` (this package) | the cache |
+| **B — plain-file** | stock `FileDataAccessor`, no cache | plain-file baseline |
+| **C — in-memory** | `MemoryDataAccessor` | the upper-bound ceiling |
+
+All three on the **same CSS version**, same machine, back-to-back. **Auth is removed from the
+measurement** — each config uses `allow-all` authorization + a writable root, so `oha` GETs/PUTs
+**anonymously** with no DPoP/WAC. This isolates the **storage-layer** delta (the goal is the cache's
+effect, not auth overhead). Configs: [`server-configs/`](server-configs/).
+
+### How to run
+
+```bash
+brew install oha          # or: cargo install oha   (a local DEV tool, NOT a project dep)
+bash perf/setup.sh        # the SAME out-of-repo runtime the micro-bench uses
+bash perf/server-bench.sh # boots A, B, C in turn; seeds; runs the oha sweep; prints the table
+```
+
+Knobs (env): `BENCH_CONCURRENCY` (default `1 8 32 64`), `BENCH_DURATION` (`10s`), `BENCH_WARMUP`
+(`3s`), `BENCH_COLD_SET` (`2000`), `BENCH_BODY_BYTES` (`256`), `BENCH_MIXED` (`0`),
+`BENCH_PORT_A/B/C`. Raw per-level JSON + the summary TSV land in `perf/server-results/`
+(gitignored — regenerate).
+
+### Workloads
+
+1. **hot-read** — repeated `GET` of the SAME small resource (the cache-**HIT** path; the cache is
+   warmed with a few GETs before measuring). Where the cache should shine.
+2. **cold-read** — `GET` across **many distinct** resources (`oha --rand-regex-url` churn over a
+   seeded set): cache-miss / churn, exercising the cache's overhead + LRU when it *can't* help.
+3. **write** — `PUT` (the write-back path; the queue ACKs before disk). The write area is reset
+   between configs so the runs are comparable.
+
+### Results
+
+See **[`SERVER-BENCH.md`](SERVER-BENCH.md)** — methodology, the A/B/C config matrix, the per-workload
+result tables, and the **A-vs-B** (cache vs plain file) and **A-vs-C** (cache vs in-memory ceiling)
+deltas. **Caveat (load-bearing):** this box may be loaded, so the **absolute** wall-clock RPS/latency
+are *advisory*; the trustworthy signal is the **relative A/B/C deltas measured back-to-back under the
+same conditions** (the Rust bench carries the identical caveat).

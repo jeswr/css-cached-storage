@@ -1,0 +1,70 @@
+{
+  "comment": [
+    "Config A — CACHED-FILE: a full bootable CSS server whose file-system backend store's accessor is",
+    "this package's CachingDataAccessor (read cache + write-back queue) wrapping the stock FileDataAccessor.",
+    "AUTH IS REMOVED FROM THE MEASUREMENT: authorization is `allow-all` (no WAC, no ACL evaluation) and the",
+    "root container is initialized writable, so anonymous GET/PUT/DELETE work with no token — isolating the",
+    "STORAGE-layer delta from auth/DPoP/WAC overhead. Based on css:config/file-root.json with exactly two",
+    "swaps: authorization webacl -> allow-all, and the backend accessor -> CachingDataAccessor.",
+    "DO NOT USE IN PRODUCTION (allow-all is public read+write)."
+  ],
+  "@context": [
+    "https://linkedsoftwaredependencies.org/bundles/npm/@solid/community-server/^7.0.0/components/context.jsonld",
+    "https://linkedsoftwaredependencies.org/bundles/npm/@jeswr/css-cached-storage/^0.0.0/components/context.jsonld"
+  ],
+  "import": [
+    "css:config/app/init/initialize-root.json",
+    "css:config/app/main/default.json",
+    "css:config/app/variables/default.json",
+    "css:config/http/handler/default.json",
+    "css:config/http/middleware/default.json",
+    "css:config/http/notifications/all.json",
+    "css:config/http/server-factory/http.json",
+    "css:config/http/static/default.json",
+    "css:config/identity/access/public.json",
+    "css:config/identity/email/default.json",
+    "css:config/identity/handler/no-accounts.json",
+    "css:config/identity/oidc/default.json",
+    "css:config/identity/ownership/token.json",
+    "css:config/identity/pod/static.json",
+    "css:config/ldp/authentication/dpop-bearer.json",
+    "css:config/ldp/authorization/allow-all.json",
+    "css:config/ldp/handler/default.json",
+    "css:config/ldp/metadata-parser/default.json",
+    "css:config/ldp/metadata-writer/default.json",
+    "css:config/ldp/modes/default.json",
+    "css:config/storage/backend/data-accessors/file.json",
+    "css:config/storage/key-value/resource-store.json",
+    "css:config/storage/location/root.json",
+    "css:config/storage/middleware/default.json",
+    "css:config/util/auxiliary/acl.json",
+    "css:config/util/identifiers/suffix.json",
+    "css:config/util/index/default.json",
+    "css:config/util/logging/winston.json",
+    "css:config/util/representation-conversion/default.json",
+    "css:config/util/resource-locker/file.json",
+    "css:config/util/variables/default.json"
+  ],
+  "@graph": [
+    {
+      "comment": "The cache + write-back queue, wrapping the file accessor. NEW defaults: 1 GiB total / 1 MiB per-file read cache, so small bench resources are cached.",
+      "@id": "urn:solid-server:default:CachedDataAccessor",
+      "@type": "CachingDataAccessor",
+      "source": { "@id": "urn:solid-server:default:FileDataAccessor" },
+      "maxReadCacheSize": 1073741824,
+      "maxReadFileSize": 1048576,
+      "maxWriteQueueSize": 104857600,
+      "maxWriteQueueFileSize": 10485760,
+      "flushIntervalMs": 5000
+    },
+    {
+      "comment": "The backend store, with its accessor pointed at the cache (per the README §'backend store's accessor').",
+      "@id": "urn:solid-server:default:ResourceStore_Backend",
+      "@type": "DataAccessorBasedStore",
+      "identifierStrategy": { "@id": "urn:solid-server:default:IdentifierStrategy" },
+      "auxiliaryStrategy": { "@id": "urn:solid-server:default:AuxiliaryStrategy" },
+      "accessor": { "@id": "urn:solid-server:default:CachedDataAccessor" },
+      "metadataStrategy": { "@id": "urn:solid-server:default:MetadataStrategy" }
+    }
+  ]
+}
