@@ -67,13 +67,26 @@ function loadPolicy(path) {
   }
 }
 
+function resolveNpmAlias(name, spec) {
+  if (typeof spec !== "string" || !spec.startsWith("npm:")) return name;
+  const target = spec.slice("npm:".length);
+  const at = target.lastIndexOf("@");
+  return at > 0 ? target.slice(0, at) : target;
+}
+
 function namesFromPackageJson(path) {
   const pkg = JSON.parse(readFileSync(path, "utf8"));
-  return [
-    ...Object.keys(pkg.dependencies ?? {}),
-    ...Object.keys(pkg.devDependencies ?? {}),
-    ...Object.keys(pkg.peerDependencies ?? {}),
+  const groups = [
+    pkg.dependencies,
+    pkg.devDependencies,
+    pkg.peerDependencies,
+    pkg.optionalDependencies,
   ];
+  return groups.flatMap((group) =>
+    Object.entries(group ?? {}).map(([name, spec]) =>
+      resolveNpmAlias(name, spec),
+    ),
+  );
 }
 
 // Returns { exists: bool, createdMs: number|null } or throws on network error.
