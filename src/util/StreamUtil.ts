@@ -52,6 +52,39 @@ export function tappedReadable(
 }
 
 /**
+ * Fully drains a binary/string `Readable` into an in-memory list of `Buffer`
+ * chunks, reporting the total byte size. The whole body is held in memory, so
+ * callers must bound the input (or the output) themselves — used here to buffer
+ * a converted representation before it is cached and re-served.
+ */
+export async function bufferStream(
+  source: Readable,
+): Promise<{ chunks: Buffer[]; size: number }> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of source) {
+    const buffer = Buffer.from(chunk as Buffer);
+    chunks.push(buffer);
+    size += buffer.length;
+  }
+  return { chunks, size };
+}
+
+/**
+ * Releases a `Readable` we are not going to consume — e.g. the already-open
+ * store-read stream on a cache hit, which must never be left dangling (it may
+ * hold a file handle). A no-op error listener is attached first so aborting the
+ * stream mid-flight cannot surface as an unhandled `'error'` event.
+ */
+export function dropStream(source: Readable): void {
+  if (source.destroyed) {
+    return;
+  }
+  source.on("error", (): void => {});
+  source.destroy();
+}
+
+/**
  * Writes a chunk to `stream`, awaiting `drain` when the internal buffer is full
  * so a fast producer cannot grow the buffer without bound. Rejects if the
  * stream errors while we wait, rather than hanging forever.
