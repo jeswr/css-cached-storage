@@ -138,19 +138,31 @@ describe("CachingRepresentationConverter", (): void => {
     const converter = new CachingRepresentationConverter({ source });
     const handle = jest.spyOn(source, "handle");
 
-    // v1 → cached.
-    await converter.handle(
-      input("a", { accept: { [JSONLD]: 1 }, modified: "t1" }),
+    // v1 → cached (the tapped output is cached once its stream is fully read).
+    await readableToString(
+      (
+        await converter.handle(
+          input("a", { accept: { [JSONLD]: 1 }, modified: "t1" }),
+        )
+      ).data,
     );
     // v2 (new dc:modified) → stale entry dropped, source runs again.
-    await converter.handle(
-      input("a", { accept: { [JSONLD]: 1 }, modified: "t2" }),
+    await readableToString(
+      (
+        await converter.handle(
+          input("a", { accept: { [JSONLD]: 1 }, modified: "t2" }),
+        )
+      ).data,
     );
     expect(handle).toHaveBeenCalledTimes(2);
 
     // The new version is now cached: a third identical read is a hit.
-    await converter.handle(
-      input("a", { accept: { [JSONLD]: 1 }, modified: "t2" }),
+    await readableToString(
+      (
+        await converter.handle(
+          input("a", { accept: { [JSONLD]: 1 }, modified: "t2" }),
+        )
+      ).data,
     );
     expect(handle).toHaveBeenCalledTimes(2);
   });
@@ -175,11 +187,19 @@ describe("CachingRepresentationConverter", (): void => {
     const handle = jest.spyOn(source, "handle");
 
     // Same ETag across reads → hit despite no modified/size.
-    await converter.handle(
-      input("a", { accept: { [JSONLD]: 1 }, etag: '"v1"' }),
+    await readableToString(
+      (
+        await converter.handle(
+          input("a", { accept: { [JSONLD]: 1 }, etag: '"v1"' }),
+        )
+      ).data,
     );
-    await converter.handle(
-      input("a", { accept: { [JSONLD]: 1 }, etag: '"v1"' }),
+    await readableToString(
+      (
+        await converter.handle(
+          input("a", { accept: { [JSONLD]: 1 }, etag: '"v1"' }),
+        )
+      ).data,
     );
     expect(handle).toHaveBeenCalledTimes(1);
 
@@ -253,6 +273,9 @@ describe("CachingRepresentationConverter", (): void => {
     // Mutate the returned metadata: a caller must not be sharing the cached copy.
     r1.metadata.contentType = HTML;
     r1.metadata.set(DC.terms.title, "mutated");
+    // Draining the response is what populates the cache; the cached metadata is
+    // the snapshot taken at handle time, before the above mutation.
+    await readableToString(r1.data);
 
     const r2 = await converter.handle(
       input("a", { accept: { [JSONLD]: 1 }, modified: "t1" }),

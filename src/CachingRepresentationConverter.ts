@@ -15,7 +15,7 @@ import {
   type ValuePreferences,
 } from "@solid/community-server";
 import { LRUCache } from "lru-cache";
-import { bufferStream, dropStream } from "./util/StreamUtil";
+import { dropStream, tappedReadable } from "./util/StreamUtil";
 
 const MIB = 1024 * 1024;
 
@@ -172,21 +172,29 @@ export class CachingRepresentationConverter extends RepresentationConverter {
       return converted;
     }
 
-    // Genuine conversion: buffer the serialized output so a repeat cross-type
-    // read can skip both the parse and the serialize.
-    const { chunks, size } = await bufferStream(converted.data);
-
-    if (size <= this.maxEntrySize) {
-      this.store(path, version, outType, chunks, size, converted.metadata);
-    }
-
-    // `converted.data` is now fully consumed, so we must hand back a fresh
-    // stream (and a fresh metadata copy the caller may mutate freely).
-    return new BasicRepresentation(
-      guardedStreamFrom(chunks),
-      new RepresentationMetadata(converted.metadata),
-      true,
+    // Genuine conversion: stream the serialized output to the caller while
+    // tapping a copy (bounded by `maxEntrySize`) to cache, so a repeat cross-type
+    // read can skip both the parse and the serialize. An oversized output streams
+    // straight through and is never held in memory in full — matching the raw
+    // cache's behaviour and avoiding an OOM on a large uncacheable conversion.
+    //
+    // Snapshot the metadata now, before the caller can mutate the returned copy,
+    // so the version the tap caches on stream-end matches the bytes it produced.
+    const cachedMetadata = new RepresentationMetadata(converted.metadata);
+    const tapped = tappedReadable(
+      converted.data,
+      this.maxEntrySize,
+      (chunks): void => {
+        if (chunks) {
+          const size = chunks.reduce(
+            (total, chunk): number => total + chunk.length,
+            0,
+          );
+          this.store(path, version, outType, chunks, size, cachedMetadata);
+        }
+      },
     );
+    return new BasicRepresentation(tapped, converted.metadata, true);
   }
 
   /**
