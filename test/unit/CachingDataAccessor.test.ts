@@ -2,7 +2,9 @@ import {
   NotFoundHttpError,
   POSIX,
   RepresentationMetadata,
+  type ResourceIdentifier,
 } from "@solid/community-server";
+import { CachingDataAccessor } from "../../src";
 import {
   data,
   gate,
@@ -318,6 +320,38 @@ describe("CachingDataAccessor", (): void => {
       expect(children).toContain(id("keep").path);
       expect(children).toContain(id("added").path);
       expect(children).not.toContain(id("gone").path);
+    });
+  });
+
+  describe("getChildCount forwarding", (): void => {
+    it("is not exposed when the source does not support it", async (): Promise<void> => {
+      // Ensure the source lacks getChildCount regardless of the CSS version under test.
+      delete (h.source as { getChildCount?: unknown }).getChildCount;
+      const cache = new CachingDataAccessor({ source: h.source });
+      expect(cache.getChildCount).toBeUndefined();
+    });
+
+    it("forwards to the source and flushes queued writes first", async (): Promise<void> => {
+      // Count from the source itself so the flush-before-count is observable.
+      (
+        h.source as unknown as {
+          getChildCount: (identifier: ResourceIdentifier) => Promise<number>;
+        }
+      ).getChildCount = async (identifier): Promise<number> => {
+        let n = 0;
+        for await (const _child of h.source.getChildren(identifier)) {
+          n += 1;
+        }
+        return n;
+      };
+      const cache = new CachingDataAccessor({ source: h.source });
+
+      // Queue a create that has not been flushed to the source yet.
+      await cache.writeDocument(id("a"), data("hi"), meta(id("a")));
+
+      expect(typeof cache.getChildCount).toBe("function");
+      // getChildCount must flush first, so the queued create is counted.
+      await expect(cache.getChildCount?.(ROOT)).resolves.toBe(1);
     });
   });
 
