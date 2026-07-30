@@ -62,6 +62,12 @@ export class CachingDataAccessor
   private readonly maxWriteQueueFileSize: number;
   private flushTimer: NodeJS.Timeout | undefined;
 
+  // `getChildCount` is an optional, newer DataAccessor method. It is bound in the
+  // constructor only when the wrapped accessor exposes it, so callers that
+  // feature-detect it (e.g. a container-size check) fall back correctly for
+  // sources that cannot count cheaply.
+  public getChildCount?: (identifier: ResourceIdentifier) => Promise<number>;
+
   public constructor(args: CachingDataAccessorArgs) {
     this.source = args.source;
     this.maxWriteQueueFileSize = args.maxWriteQueueFileSize ?? 10 * MIB;
@@ -73,6 +79,23 @@ export class CachingDataAccessor
       args.source,
       args.maxWriteQueueSize ?? 100 * MIB,
     );
+
+    // Forward getChildCount to the source when it supports it. Mirror getChildren:
+    // flush pending writes first so the source is authoritative for the count. The
+    // structural typing keeps this decorator compatible with CSS versions that
+    // predate the getChildCount method.
+    const source = this.source as DataAccessor & {
+      getChildCount?: (identifier: ResourceIdentifier) => Promise<number>;
+    };
+    if (source.getChildCount) {
+      const getChildCount = source.getChildCount.bind(source);
+      this.getChildCount = async (
+        identifier: ResourceIdentifier,
+      ): Promise<number> => {
+        await this.writeQueue.flushAll();
+        return getChildCount(identifier);
+      };
+    }
 
     const interval = args.flushIntervalMs ?? 0;
     if (interval > 0) {
