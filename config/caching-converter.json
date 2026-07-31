@@ -1,0 +1,19 @@
+{
+  "@context": [
+    "https://linkedsoftwaredependencies.org/bundles/npm/@solid/community-server/^7.0.0/components/context.jsonld",
+    "https://linkedsoftwaredependencies.org/bundles/npm/@jeswr/css-cached-storage/^0.0.0/components/context.jsonld"
+  ],
+  "import": [
+    "css:config/util/representation-conversion/default.json"
+  ],
+  "@graph": [
+    {
+      "comment": "Caches the serialized output of the out-converter, per content-type, keyed by resource version, so repeat cross-type reads (e.g. Turtle on disk read as application/ld+json) skip both the parse and the serialize. It wraps the default UiEnabledConverter. To use it, point the RepresentationConvertingStore's `options_outConverter` at urn:solid-server:default:CachedOutConverter (override urn:solid-server:default:ResourceStore_Converting).",
+      "@id": "urn:solid-server:default:CachedOutConverter",
+      "@type": "CachingRepresentationConverter",
+      "source": { "@id": "urn:solid-server:default:UiEnabledConverter" },
+      "maxCacheSize": 268435456,
+      "maxEntrySize": 1048576
+    }
+  ]
+}

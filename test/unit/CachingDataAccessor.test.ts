@@ -34,6 +34,25 @@ describe("CachingDataAccessor", (): void => {
       expect(getData).toHaveBeenCalledTimes(1);
     });
 
+    it("does not cache metadata: repeated getMetadata always hits the source", async (): Promise<void> => {
+      // Regression: getMetadata used to cache RepresentationMetadata objects,
+      // each retaining an N3Store of interned terms; metadata-only entries
+      // counted as ~1 byte against the byte budget, so they never aged out and
+      // the heap grew without bound. getMetadata must always read through.
+      await h.cache.writeDocument(id("a"), data("hello"), meta(id("a")));
+      await h.cache.finalize();
+      const getMetadata = jest.spyOn(h.source, "getMetadata");
+
+      expect(
+        (await h.cache.getMetadata(id("a"))).get(POSIX.terms.size)?.value,
+      ).toBe("5");
+      expect(
+        (await h.cache.getMetadata(id("a"))).get(POSIX.terms.size)?.value,
+      ).toBe("5");
+
+      expect(getMetadata).toHaveBeenCalledTimes(2);
+    });
+
     it("does not cache a body larger than maxReadFileSize", async (): Promise<void> => {
       h = await setup({ maxReadFileSize: 4 });
       await h.source.writeDocument(
