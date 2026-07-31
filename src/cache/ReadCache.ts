@@ -24,11 +24,22 @@ export class ReadCache {
   private readonly cache: LRUCache<string, CachedEntry>;
   public readonly maxFileSize: number;
 
-  public constructor(maxCacheSize: number, maxFileSize: number) {
+  public constructor(
+    maxCacheSize: number,
+    maxFileSize: number,
+    maxEntries = 100000,
+  ) {
     this.maxFileSize = maxFileSize;
     this.cache = new LRUCache<string, CachedEntry>({
+      // Byte budget for cached DATA bodies.
       maxSize: Math.max(1, maxCacheSize),
-      // Data bytes dominate; metadata-only entries count as 1 so they still age out.
+      // Hard cap on entry COUNT. Metadata-only entries (from getMetadata) carry no data
+      // bytes, so under `maxSize` alone they count as ~1 byte and can accumulate almost
+      // without bound — every getMetadata caches a RepresentationMetadata (quads/terms),
+      // so without this cap the metadata cache grows until the process OOMs. `max` ages
+      // them out by count regardless of their (tiny) byte contribution.
+      max: Math.max(1, maxEntries),
+      // Data bytes dominate the byte budget; metadata-only entries count as 1 (aged out by `max`).
       sizeCalculation: (entry): number => Math.max(1, entry.dataSize),
     });
   }

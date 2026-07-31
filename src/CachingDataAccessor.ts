@@ -130,15 +130,15 @@ export class CachingDataAccessor
       }
       return metadata;
     }
-    const cached = this.readCache.get(path);
-    if (cached?.metadata) {
-      return new RepresentationMetadata(cached.metadata);
-    }
+    // Metadata is deliberately NOT cached. Caching RepresentationMetadata
+    // retained an N3Store + N3EntityIndex per entry (with interned term
+    // strings); under load these accumulated and dominated the heap — a
+    // heap-snapshot retainer walk traced ~2776 live metadata objects to this
+    // cache. Since the ExtensionBasedMapper fix, source getMetadata is a cheap
+    // stat, so caching it buys ~nothing. Data bodies are still cached
+    // (see getData / readFromSource); the write-queue overlay above still makes
+    // pending writes/deletes authoritative, so no stale reads.
     const metadata = await this.source.getMetadata(identifier);
-    // Re-check: only cache if still clean (a write may have raced in).
-    if (!this.writeQueue.peek(path)) {
-      this.readCache.setMetadata(path, metadata);
-    }
     return new RepresentationMetadata(metadata);
   }
 
