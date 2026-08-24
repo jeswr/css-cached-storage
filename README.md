@@ -80,6 +80,11 @@ backend store's `accessor` at `urn:solid-server:default:CachedDataAccessor`:
 }
 ```
 
+For a durability-preserving read cache, import
+[`config/caching-file-read-only.json`](config/caching-file-read-only.json). That preset sets both
+write-queue limits to zero, so CSS only responds after the wrapped accessor has persisted a write.
+It remains single-worker only because the in-memory read cache is not coherent across workers.
+
 ## Development
 
 ```bash

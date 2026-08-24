@@ -1,0 +1,19 @@
+{
+  "@context": [
+    "https://linkedsoftwaredependencies.org/bundles/npm/@solid/community-server/^7.0.0/components/context.jsonld",
+    "https://linkedsoftwaredependencies.org/bundles/npm/@jeswr/css-cached-storage/^0.0.0/components/context.jsonld"
+  ],
+  "@graph": [
+    {
+      "comment": "A bounded, single-worker read cache in front of the file-system DataAccessor. Writes remain write-through.",
+      "@id": "urn:solid-server:default:CachedDataAccessor",
+      "@type": "CachingDataAccessor",
+      "source": { "@id": "urn:solid-server:default:FileDataAccessor" },
+      "maxReadCacheSize": 1073741824,
+      "maxReadFileSize": 1048576,
+      "maxWriteQueueSize": 0,
+      "maxWriteQueueFileSize": 0,
+      "flushIntervalMs": 0
+    }
+  ]
+}
