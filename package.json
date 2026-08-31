@@ -1,6 +1,6 @@
 {
   "name": "@jeswr/css-cached-storage",
-  "version": "0.2.0-alpha.1",
+  "version": "0.2.0-alpha.2",
   "description": "A Community Solid Server DataAccessor that puts an in-memory read cache and write-back queue in front of another DataAccessor.",
   "license": "MIT",
   "publishConfig": {
@@ -42,7 +42,7 @@
     "lru-cache": "^11.0.0"
   },
   "peerDependencies": {
-    "@solid/community-server": "^7.0.0 || 7.1.10-alpha.2"
+    "@solid/community-server": "^7.0.0 || >=7.1.10-alpha.2 <7.1.11"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",
