@@ -1,8 +1,11 @@
 {
   "name": "@jeswr/css-cached-storage",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A Community Solid Server DataAccessor that puts an in-memory read cache and write-back queue in front of another DataAccessor.",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "Jesse Wright <https://github.com/jeswr>",
   "repository": {
     "type": "git",
